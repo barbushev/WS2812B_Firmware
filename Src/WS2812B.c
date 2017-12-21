@@ -40,6 +40,10 @@ uint8_t *stripData = NULL;  //the state of the entire strip is stored here. The 
 
 static void ws2812b_ColorToBits(const uint8_t *colorByte, uint8_t *arrayOfBits);
 
+/*
+ * Initializes the LED strip to the number of ledCount.
+ * NOTE that if there is not enough memory, the device will most likely generate a Hard_Fault rather than gracefully return an error.
+ */
 uint8_t ws2812b_Init(uint16_t ledCount)
 {
 	  HAL_StatusTypeDef result;
@@ -83,7 +87,7 @@ uint8_t ws2812b_Init(uint16_t ledCount)
 
 	  TIM_OC_InitTypeDef sConfigOC;
 	  sConfigOC.OCMode = TIM_OCMODE_PWM1;
-	  sConfigOC.Pulse = 10;
+	  sConfigOC.Pulse = 0;
 	  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
 	  sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
 	  sConfigOC.OCIdleState = TIM_OCIDLESTATE_RESET;
@@ -150,6 +154,10 @@ void ws2812b_SetStripColor(const ledcolor_t *newColor)
 		ws2812b_LedSet(&i, newColor);
 }
 
+
+/*
+ * Rotates the LEDs in a clockwise or counterclockwise direction by a number of rotateBy
+ */
 void ws2812b_RotateStrip(rotation_t direction, uint16_t rotateBy)
 {
 	//since each color bit is one element in the array, 24 elements need to be moved in order to rotate by one led.
@@ -176,6 +184,9 @@ void ws2812b_RotateStrip(rotation_t direction, uint16_t rotateBy)
 	}
 }
 
+/*
+ * Swap the colors of LEDs at position1 and position2
+ */
 void ws2812b_LedSwap(uint16_t position1, uint16_t position2)
 {
 	uint8_t temp[24];
@@ -186,13 +197,16 @@ void ws2812b_LedSwap(uint16_t position1, uint16_t position2)
 	memcpy(&stripData[position1], temp, 24);
 }
 
+/*
+ * Copy the LED colors of numLedsToCopy starting at copyFrom and pasting to copyTo
+ */
 void ws2812b_LedCopy(uint16_t numLedsToCopy, uint16_t copyFrom, uint16_t copyTo)
 {
 	memmove(&stripData[copyTo * 24], &stripData[copyFrom * 24], numLedsToCopy * 24);
 }
 
 /*
- * Similar to LedCopy, but after it copies to the new location, it frees (turns off) the Led at the old location.
+ * Calls ws2812b_LedCopy first, and then it turns off the LED(s) at the old location.
  */
 void ws2812b_LedMove(uint16_t numLedsToCopy, uint16_t copyFrom, uint16_t copyTo)
 {
@@ -218,7 +232,7 @@ Note: Follow the order of GRB to sent data and the high bit sent at first.
 //takes a byte of color and converts it to an 8 element array of bits with most significant bit first
 static void ws2812b_ColorToBits(const uint8_t *colorByte, uint8_t *arrayOfBits)
 {
-	for(uint8_t bit = 0; bit < 7; bit++)
+	for(uint8_t bit = 0; bit < 8; bit++)
 	{
 		uint8_t testBit = 7 - bit; //this is in order to get MSB first
 		arrayOfBits[bit] = (*colorByte & (1 << testBit)) ? T_ONE : T_ZERO;
