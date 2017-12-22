@@ -38,7 +38,12 @@ static DMA_HandleTypeDef handleLedDma;
 
 uint8_t *stripData = NULL;  //the state of the entire strip is stored here. The circular DMA cycles through this array.
 
+
+//private function prototypes
+static void ws2812b_BitsToColor(uint8_t *colorByte, const uint8_t *arrayOfBits);
 static void ws2812b_ColorToBits(const uint8_t *colorByte, uint8_t *arrayOfBits);
+static void ws2812b_IncrementColorChannel(const uint8_t *incrementBy, uint8_t *channelToIncrement);
+static void ws2812b_DecrementColorChannel(const uint8_t *decrementBy, uint8_t *channelToDecrement);
 
 /*
  * Initializes the LED strip to the number of ledCount.
@@ -154,7 +159,6 @@ void ws2812b_SetStripColor(const ledcolor_t *newColor)
 		ws2812b_LedSet(&i, newColor);
 }
 
-
 /*
  * Rotates the LEDs in a clockwise or counterclockwise direction by a number of rotateBy
  */
@@ -214,7 +218,6 @@ void ws2812b_LedMove(uint16_t numLedsToCopy, uint16_t copyFrom, uint16_t copyTo)
 	memset(&stripData[copyFrom * 24], T_ZERO, numLedsToCopy * 24);
 }
 
-
 /*
  * Sets the LED at positionInStrip to newColor
  */
@@ -226,10 +229,97 @@ void ws2812b_LedSet(const uint16_t *positionInStrip, const ledcolor_t *newColor)
 }
 
 /*
-G7 G6 G5 G4 G3 G2 G1 G0 R7 R6 R5 R4 R3 R2 R1 R0 B7 B6 B5 B4 B3 B2 B1 B0
-Note: Follow the order of GRB to sent data and the high bit sent at first.
-*/
-//takes a byte of color and converts it to an 8 element array of bits with most significant bit first
+ * Decreases the color of all LEDs on the strip by a value of newColor
+ * If the existing value - new value < 0, it rolls over.
+ */
+void ws2812b_StripDecrementColor(const ledcolor_t *newColor)
+{
+	for(uint16_t i = 0; i < numberOfLeds; i++)
+		ws2812b_LedDecrementColor(&i, newColor);
+}
+
+/*
+ * Decreases the color of LED at positionInStrip by a value of newColor
+ * If the existing value - new value < 0, it rolls over.
+ */
+void ws2812b_LedDecrementColor(const uint16_t *positionInStrip, const ledcolor_t *newColor)
+{
+	if (newColor->green > 0)
+		ws2812b_DecrementColorChannel(&(newColor->green), &stripData[*positionInStrip*24]);
+
+	if (newColor->red > 0)
+		ws2812b_DecrementColorChannel(&(newColor->red), &stripData[*positionInStrip*24 + 8]);
+
+	if (newColor->blue > 0)
+		ws2812b_DecrementColorChannel(&(newColor->blue), &stripData[*positionInStrip*24 + 16]);
+}
+
+/*
+ * Increases the color of all LEDs on the strip by a value of newColor
+ * If the existing value + new value > 255, it rolls over.
+ */
+void ws2812b_StripIncrementColor(const ledcolor_t *newColor)
+{
+	for(uint16_t i = 0; i < numberOfLeds; i++)
+		ws2812b_LedIncrementColor(&i, newColor);
+}
+
+/*
+ * Increases the color of LED at positionInStrip by a value of newColor
+ * If the existing value + new value > 255, it rolls over.
+ */
+void ws2812b_LedIncrementColor(const uint16_t *positionInStrip, const ledcolor_t *newColor)
+{
+	if (newColor->green > 0)
+		ws2812b_IncrementColorChannel(&(newColor->green), &stripData[*positionInStrip*24]);
+
+	if (newColor->red > 0)
+		ws2812b_IncrementColorChannel(&(newColor->red), &stripData[*positionInStrip*24 + 8]);
+
+	if (newColor->blue > 0)
+		ws2812b_IncrementColorChannel(&(newColor->blue), &stripData[*positionInStrip*24 + 16]);
+}
+
+/*
+ * Decrement a single color channel (Red, Green or Blue)
+ */
+static void ws2812b_DecrementColorChannel(const uint8_t *decrementBy, uint8_t *channelToDecrement)
+{
+	uint8_t temp = 0;
+	ws2812b_BitsToColor(&temp, channelToDecrement);
+	temp -= *decrementBy;
+	ws2812b_ColorToBits(&temp, channelToDecrement);
+}
+
+/*
+ * Increment a single color channel (Red, Green or Blue)
+ */
+static void ws2812b_IncrementColorChannel(const uint8_t *incrementBy, uint8_t *channelToIncrement)
+{
+	uint8_t temp = 0;
+	ws2812b_BitsToColor(&temp, channelToIncrement);
+	temp += *incrementBy;
+	ws2812b_ColorToBits(&temp, channelToIncrement);
+}
+
+/*
+ * Converts an array of 8 T_ONE or T_ZEROs back to a byte
+ */
+static void ws2812b_BitsToColor(uint8_t *colorByte, const uint8_t *arrayOfBits)
+{
+	*colorByte = 0;
+	for(uint8_t i = 0; i < 8; i++)
+	{
+		uint8_t testBit = 7 - i;
+		*colorByte |= (arrayOfBits[i] == T_ONE) << testBit;
+	}
+}
+
+/*
+ * Takes a byte of color and converts it to an 8 element array of T_ONE or T_ZERO with most significant bit first
+ * G7 G6 G5 G4 G3 G2 G1 G0 R7 R6 R5 R4 R3 R2 R1 R0 B7 B6 B5 B4 B3 B2 B1 B0
+ * Note: Follow the order of GRB to sent data MSB first.
+ */
 static void ws2812b_ColorToBits(const uint8_t *colorByte, uint8_t *arrayOfBits)
 {
 	for(uint8_t bit = 0; bit < 8; bit++)

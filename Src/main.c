@@ -140,6 +140,42 @@ while (!usbIsConnected())
 				break;
 			}
 
+			case cmdLedIncColor:
+			{
+				newColor.green = data[2];
+				newColor.red = data[3];
+				newColor.blue = data[4];
+				ws2812b_LedIncrementColor(&data[1], &newColor);
+				break;
+			}
+
+			case cmdLedDecColor:
+			{
+				newColor.green = data[2];
+				newColor.red = data[3];
+				newColor.blue = data[4];
+				ws2812b_LedDecrementColor(&data[1], &newColor);
+				break;
+			}
+
+			case cmdStripIncColor:
+			{
+				newColor.green = data[1];
+				newColor.red = data[2];
+				newColor.blue = data[3];
+				ws2812b_StripIncrementColor(&newColor);
+				break;
+			}
+
+			case cmdStripDecColor:
+			{
+				newColor.green = data[1];
+				newColor.red = data[2];
+				newColor.blue = data[3];
+				ws2812b_StripDecrementColor(&newColor);
+				break;
+			}
+
 			default: error = 1;
 		}
 
