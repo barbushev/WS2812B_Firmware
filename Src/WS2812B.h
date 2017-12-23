@@ -17,8 +17,8 @@ typedef enum
 	cmdStripSetColor,     //set all LEDs in the strip to a specific color
 	cmdStripIncColor,       //increments each LED on the strip's G, R and B value the supplied value
 	cmdStripDecColor,      //decrements each LED on the strip's G, R and B value the supplied value
-	cmdStripRotateClockwise,      //shift all LEDs in the strip in the positive direction by a specific number of LEDs.
-	cmdStripRotateCounterClockwise,
+	cmdStripRotate,         //shift all LEDs in the strip in the specified direction by a specific number.
+	cmdStripRotateSegment,  //shift a segment of LEDs in the strip in the specified direction by a specific number.
 	cmdLedSwap,			  //swap the values of two Leds
 	cmdLedSetColor,		  //sets an led at a selected location to a selected value
 	cmdLedGetColor,        //gets the Led values at a selected location
@@ -26,6 +26,7 @@ typedef enum
 	cmdLedDecColor,
 	cmdLedCopy,			//copy one or more Leds to a new location - number of LEDs to copy, position of 1st LED to copy, position of 1st LED to paste
 	cmdLedMove,    //Similar to LedCopy, but after it copies to the new location, it frees (turns off) the Led at the old location.
+	cmdLedCheck,        //Check if the supplied parameters (color channel values) for a specific LED match.
 } commands_t;
 
 typedef enum
@@ -53,5 +54,7 @@ void ws2812b_LedDecrementColor(const uint16_t *positionInStrip, const ledcolor_t
 void ws2812b_LedIncrementColor(const uint16_t *positionInStrip, const ledcolor_t *newColor);
 void ws2812b_StripIncrementColor(const ledcolor_t *newColor);
 void ws2812b_StripDecrementColor(const ledcolor_t *newColor);
+uint8_t ws2812b_LedCheck(const uint16_t *positionInStrip, const ledcolor_t *colorToCheck);
+void ws2812b_RotateStripSegment(rotation_t direction, uint16_t startIndex, uint16_t endIndex, uint16_t rotateBy);
 
 #endif /* APPLICATION_USER_WS2812B_H_ */

@@ -21,16 +21,17 @@
 
 //memory per LED = 1 * 24 * uint8_t = 24 bytes
 //strip of 300   48 * 300 = 14400 bytes
-#define ledControlPin GPIO_PIN_6           //TIM4 Channel1
-#define ledControlPort GPIOB			   //TIM4 Channel1
+#define LED_CONTROL_PIN GPIO_PIN_6           //TIM4 Channel1
+#define LED_CONTROL_PORT GPIOB			   //TIM4 Channel1
 #define T_ZERO (29)  //The clock is running at 72 MHz, which is a period of 13.888..ns.  400ns / 13.88 = 28.8
 #define T_ONE (58)   //Same as above, 800ns / 13.88 = 57.6
-#define stripLatch (40) //Called RES in the data sheet and has to be >50uS. Number of 1.25us time periods - 50uS/ 1.25us = 40.
+#define DATA_LATCH (40) //Called RES in the data sheet and has to be >50uS. Number of 1.25us time periods - 50uS/ 1.25us = 40.
+#define RED_OFFSET (8)     //array offset. Red starts at the 8th element
+#define BLUE_OFFSET (16)  //array offset. Blue starts at the 16th element.
+#define LED_OFFSET (24)   //array offset. LED has 3 colors, 8 elements each = 24
 
 static const uint16_t totalCycles =  180;        //Used for configuring PWM. A value of 90 is 800Khz. A value of 180 is 400Khz
 static uint16_t numberOfLeds;       //represents the total number of LEDs on the strip.
-static uint32_t numberOfColorBits;  // = numberOfLeds * 24
-static uint32_t fullFrameSize;      // = (numberOfLeds * 24) + stripLatch
 
 static TIM_HandleTypeDef handleLedPwm;
 static DMA_HandleTypeDef handleLedDma;
@@ -62,9 +63,9 @@ uint8_t ws2812b_Init(uint16_t ledCount)
 	  GPIO_InitStruct.Pull = GPIO_NOPULL;
 	  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
 
-	  GPIO_InitStruct.Pin = ledControlPin;
-	  HAL_GPIO_Init(ledControlPort, &GPIO_InitStruct);
-	  HAL_GPIO_WritePin(ledControlPort, ledControlPin, GPIO_PIN_RESET);
+	  GPIO_InitStruct.Pin = LED_CONTROL_PIN;
+	  HAL_GPIO_Init(LED_CONTROL_PORT, &GPIO_InitStruct);
+	  HAL_GPIO_WritePin(LED_CONTROL_PORT, LED_CONTROL_PIN, GPIO_PIN_RESET);
 
 	  handleLedPwm.Instance = TIM4;
 	  handleLedPwm.Init.Prescaler =  0;
@@ -120,8 +121,7 @@ uint8_t ws2812b_Init(uint16_t ledCount)
 		  free(stripData);
 
 	  numberOfLeds = ledCount;
-	  numberOfColorBits = numberOfLeds * 24;
-	  fullFrameSize = numberOfColorBits + stripLatch;
+	  uint32_t fullFrameSize = (numberOfLeds * LED_OFFSET) + DATA_LATCH;
 
 	  stripData = (uint8_t *)calloc(fullFrameSize, sizeof(uint8_t));  //allocate and set every value to 0
 	  if (stripData == NULL)
@@ -146,6 +146,7 @@ void DMA1_Channel1_IRQHandler(void)
 void ws2812b_SetStripOff()
 {
 	//fill buffer with  T_ZEROs
+	uint32_t numberOfColorBits = numberOfLeds * LED_OFFSET;
 	for(uint32_t i = 0; i < numberOfColorBits; i++)
 		stripData[i] = T_ZERO;
 }
@@ -160,32 +161,41 @@ void ws2812b_SetStripColor(const ledcolor_t *newColor)
 }
 
 /*
- * Rotates the LEDs in a clockwise or counterclockwise direction by a number of rotateBy
+ * Rotate a segment of the strip starting at startIndex (included) and ending at endIndex (excluded) by rotateBy LEDs
  */
-void ws2812b_RotateStrip(rotation_t direction, uint16_t rotateBy)
+void ws2812b_RotateStripSegment(rotation_t direction, uint16_t startIndex, uint16_t endIndex, uint16_t rotateBy)
 {
-	//since each color bit is one element in the array, 24 elements need to be moved in order to rotate by one led.
-	uint8_t temp[24];
+	uint8_t temp[LED_OFFSET];	//24 elements need to be moved in order to rotate by one led.
+	startIndex *= LED_OFFSET;	//the start index of the first bit
+	endIndex *= LED_OFFSET;     //the start index of the first bit
 	if (direction == rotateClockwise)
 	{
 		for (uint32_t numberRotations = 0; numberRotations < rotateBy; numberRotations++)
 		{
-		memcpy(temp, stripData, 24);
-		for (uint32_t i = 0; i < numberOfColorBits - 24; i++) //using numberOfColorBits and not fullFrameSize as we don't want to move the last 40 bytes used for reset.
-			stripData[i] = stripData[i+24];
-		memcpy(&stripData[numberOfColorBits - 24], temp, 24);
+		memcpy(temp, &stripData[startIndex], LED_OFFSET);  //copy the first LED to temp
+		for (uint32_t i = startIndex; i < (endIndex - LED_OFFSET); i++)
+			stripData[i] = stripData[i + LED_OFFSET];
+		memcpy(&stripData[endIndex - LED_OFFSET], temp, LED_OFFSET);  //copy temp to the last position
 		}
 	}
 	else if (direction == rotateCounterClockwise)
 	{
 		for (uint32_t numberRotations = 0; numberRotations < rotateBy; numberRotations++)
 		{
-		memcpy(temp, &stripData[numberOfColorBits-24], 24);
-		for (uint32_t i = numberOfColorBits - 1; i > 23; i--)
-			stripData[i] = stripData[i-24];
-		memcpy(stripData, temp, 24);
+		memcpy(temp, &stripData[endIndex - LED_OFFSET], LED_OFFSET);  //copy the last LED to temp
+		for (uint32_t i = endIndex - 1; i >= (startIndex + LED_OFFSET); i--)
+			stripData[i] = stripData[i - LED_OFFSET];
+		memcpy(&stripData[startIndex], temp, LED_OFFSET);  //copy temp to the first position
 		}
 	}
+}
+
+/*
+ * Rotates the LEDs in a clockwise or counterclockwise direction by a number of rotateBy
+ */
+void ws2812b_RotateStrip(rotation_t direction, uint16_t rotateBy)
+{
+	ws2812b_RotateStripSegment(direction, 0, numberOfLeds, rotateBy);
 }
 
 /*
@@ -193,12 +203,12 @@ void ws2812b_RotateStrip(rotation_t direction, uint16_t rotateBy)
  */
 void ws2812b_LedSwap(uint16_t position1, uint16_t position2)
 {
-	uint8_t temp[24];
-	position1 *= 24;
-	position2 *= 24;
-	memcpy(temp, &stripData[position2], 24);
-	memcpy(&stripData[position2], &stripData[position1], 24);
-	memcpy(&stripData[position1], temp, 24);
+	uint8_t temp[LED_OFFSET];
+	position1 *= LED_OFFSET;
+	position2 *= LED_OFFSET;
+	memcpy(temp, &stripData[position2], LED_OFFSET);
+	memcpy(&stripData[position2], &stripData[position1], LED_OFFSET);
+	memcpy(&stripData[position1], temp, LED_OFFSET);
 }
 
 /*
@@ -206,7 +216,7 @@ void ws2812b_LedSwap(uint16_t position1, uint16_t position2)
  */
 void ws2812b_LedCopy(uint16_t numLedsToCopy, uint16_t copyFrom, uint16_t copyTo)
 {
-	memmove(&stripData[copyTo * 24], &stripData[copyFrom * 24], numLedsToCopy * 24);
+	memmove(&stripData[copyTo * LED_OFFSET], &stripData[copyFrom * LED_OFFSET], numLedsToCopy * LED_OFFSET);
 }
 
 /*
@@ -215,7 +225,7 @@ void ws2812b_LedCopy(uint16_t numLedsToCopy, uint16_t copyFrom, uint16_t copyTo)
 void ws2812b_LedMove(uint16_t numLedsToCopy, uint16_t copyFrom, uint16_t copyTo)
 {
 	ws2812b_LedCopy(numLedsToCopy, copyFrom, copyTo);
-	memset(&stripData[copyFrom * 24], T_ZERO, numLedsToCopy * 24);
+	memset(&stripData[copyFrom * LED_OFFSET], T_ZERO, numLedsToCopy * LED_OFFSET);
 }
 
 /*
@@ -223,9 +233,9 @@ void ws2812b_LedMove(uint16_t numLedsToCopy, uint16_t copyFrom, uint16_t copyTo)
  */
 void ws2812b_LedSet(const uint16_t *positionInStrip, const ledcolor_t *newColor)
 {
-	ws2812b_ColorToBits(&(newColor->green), &stripData[*positionInStrip*24]);
-	ws2812b_ColorToBits(&(newColor->red), &stripData[*positionInStrip*24 + 8]);
-	ws2812b_ColorToBits(&(newColor->blue), &stripData[*positionInStrip*24 + 16]);
+	ws2812b_ColorToBits(&(newColor->green), &stripData[*positionInStrip*LED_OFFSET]);
+	ws2812b_ColorToBits(&(newColor->red), &stripData[*positionInStrip*LED_OFFSET + RED_OFFSET]);
+	ws2812b_ColorToBits(&(newColor->blue), &stripData[*positionInStrip*LED_OFFSET + BLUE_OFFSET]);
 }
 
 /*
@@ -245,13 +255,13 @@ void ws2812b_StripDecrementColor(const ledcolor_t *newColor)
 void ws2812b_LedDecrementColor(const uint16_t *positionInStrip, const ledcolor_t *newColor)
 {
 	if (newColor->green > 0)
-		ws2812b_DecrementColorChannel(&(newColor->green), &stripData[*positionInStrip*24]);
+		ws2812b_DecrementColorChannel(&(newColor->green), &stripData[*positionInStrip*LED_OFFSET]);
 
 	if (newColor->red > 0)
-		ws2812b_DecrementColorChannel(&(newColor->red), &stripData[*positionInStrip*24 + 8]);
+		ws2812b_DecrementColorChannel(&(newColor->red), &stripData[*positionInStrip*LED_OFFSET + RED_OFFSET]);
 
 	if (newColor->blue > 0)
-		ws2812b_DecrementColorChannel(&(newColor->blue), &stripData[*positionInStrip*24 + 16]);
+		ws2812b_DecrementColorChannel(&(newColor->blue), &stripData[*positionInStrip*LED_OFFSET + BLUE_OFFSET]);
 }
 
 /*
@@ -271,13 +281,26 @@ void ws2812b_StripIncrementColor(const ledcolor_t *newColor)
 void ws2812b_LedIncrementColor(const uint16_t *positionInStrip, const ledcolor_t *newColor)
 {
 	if (newColor->green > 0)
-		ws2812b_IncrementColorChannel(&(newColor->green), &stripData[*positionInStrip*24]);
+		ws2812b_IncrementColorChannel(&(newColor->green), &stripData[*positionInStrip*LED_OFFSET]);
 
 	if (newColor->red > 0)
-		ws2812b_IncrementColorChannel(&(newColor->red), &stripData[*positionInStrip*24 + 8]);
+		ws2812b_IncrementColorChannel(&(newColor->red), &stripData[*positionInStrip*LED_OFFSET + RED_OFFSET]);
 
 	if (newColor->blue > 0)
-		ws2812b_IncrementColorChannel(&(newColor->blue), &stripData[*positionInStrip*24 + 16]);
+		ws2812b_IncrementColorChannel(&(newColor->blue), &stripData[*positionInStrip*LED_OFFSET + BLUE_OFFSET]);
+}
+
+/*
+ * Check if the current state of the led at positionInStrip matches with colorToCheck
+ * Returns 1 if all 3 color channels match.
+ */
+uint8_t ws2812b_LedCheck(const uint16_t *positionInStrip, const ledcolor_t *colorToCheck)
+{
+	uint8_t tempGreen = 0, tempRed = 0, tempBlue = 0;
+	ws2812b_BitsToColor(&tempGreen, &stripData[*positionInStrip*LED_OFFSET]);
+	ws2812b_BitsToColor(&tempRed, &stripData[*positionInStrip*LED_OFFSET + RED_OFFSET]);
+	ws2812b_BitsToColor(&tempBlue, &stripData[*positionInStrip*LED_OFFSET + BLUE_OFFSET]);
+	return ((colorToCheck->green == tempGreen) && (colorToCheck->red == tempRed) && (colorToCheck->blue == tempBlue));
 }
 
 /*

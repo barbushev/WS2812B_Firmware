@@ -101,16 +101,10 @@ while (!usbIsConnected())
 				break;
 			}
 
-			case cmdStripRotateClockwise:
+			case cmdStripRotate:
 			{
-			    ws2812b_RotateStrip(rotateClockwise, data[1]);
+			    ws2812b_RotateStrip(data[1], data[2]);
 			    break;
-			}
-
-	     	case cmdStripRotateCounterClockwise:
-			{
-			    ws2812b_RotateStrip(rotateCounterClockwise, data[1]);
-				break;
 			}
 
 	     	case cmdLedSwap:
@@ -173,6 +167,21 @@ while (!usbIsConnected())
 				newColor.red = data[2];
 				newColor.blue = data[3];
 				ws2812b_StripDecrementColor(&newColor);
+				break;
+			}
+
+			case cmdLedCheck:
+			{
+				newColor.green = data[2];
+				newColor.red = data[3];
+				newColor.blue = data[4];
+				error = (ws2812b_LedCheck(&data[1], &newColor) != 1);
+				break;
+			}
+
+			case cmdStripRotateSegment:
+			{
+				ws2812b_RotateStripSegment(data[1], data[2], data[3], data[4]);
 				break;
 			}
 
