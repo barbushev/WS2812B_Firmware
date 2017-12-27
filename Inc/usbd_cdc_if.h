@@ -71,9 +71,6 @@
   * @{
   */ 
 /* USER CODE BEGIN EXPORTED_DEFINES */
- extern uint8_t received_data[];
- extern uint32_t received_data_size;
- extern uint32_t receive_total;
  extern USBD_HandleTypeDef  *hUsbDevice_0;
 
  /* USER CODE END EXPORTED_DEFINES */

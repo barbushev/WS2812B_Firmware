@@ -30,21 +30,19 @@
 #define BLUE_OFFSET (16)  //array offset. Blue starts at the 16th element.
 #define LED_OFFSET (24)   //array offset. LED has 3 colors, 8 elements each = 24
 
-static const uint16_t totalCycles =  180;        //Used for configuring PWM. A value of 90 is 800Khz. A value of 180 is 400Khz
+static const uint16_t totalCycles =  120;//180;        //Used for configuring PWM. A value of 90 is 800Khz. A value of 180 is 400Khz
 static uint16_t numberOfLeds;       //represents the total number of LEDs on the strip.
 
 static TIM_HandleTypeDef handleLedPwm;
 static DMA_HandleTypeDef handleLedDma;
 
-
-uint8_t *stripData = NULL;  //the state of the entire strip is stored here. The circular DMA cycles through this array.
-
+static uint8_t *stripData = NULL;  //the state of the entire strip is stored here. The circular DMA cycles through this array.
 
 //private function prototypes
-static void ws2812b_BitsToColor(uint8_t *colorByte, const uint8_t *arrayOfBits);
-static void ws2812b_ColorToBits(const uint8_t *colorByte, uint8_t *arrayOfBits);
-static void ws2812b_IncrementColorChannel(const uint8_t *incrementBy, uint8_t *channelToIncrement);
-static void ws2812b_DecrementColorChannel(const uint8_t *decrementBy, uint8_t *channelToDecrement);
+static __inline void ws2812b_BitsToColor(uint8_t *colorByte, const uint8_t *arrayOfBits);
+static __inline void ws2812b_ColorToBits(const uint8_t *colorByte, uint8_t *arrayOfBits);
+static __inline void ws2812b_IncrementColorChannel(const uint8_t *incrementBy, uint8_t *channelToIncrement);
+static __inline void ws2812b_DecrementColorChannel(const uint8_t *decrementBy, uint8_t *channelToDecrement);
 
 /*
  * Initializes the LED strip to the number of ledCount.
@@ -154,10 +152,10 @@ void ws2812b_SetStripOff()
 /*
  * Sets the entire LED strip to newColor
  */
-void ws2812b_SetStripColor(const ledcolor_t *newColor)
+void ws2812b_SetStripColor(const uint8_t *newGreen, const uint8_t *newRed, const uint8_t *newBlue)
 {
 	for(uint16_t i = 0; i < numberOfLeds; i++)
-		ws2812b_LedSet(&i, newColor);
+		ws2812b_LedSet(&i, newGreen, newRed, newBlue);
 }
 
 /*
@@ -199,6 +197,25 @@ void ws2812b_RotateStrip(rotation_t direction, uint16_t rotateBy)
 }
 
 /*
+ * Swaps a number of LEDs of the entire strip starting at indexFrom into indexTo
+ * Use mirror = 0 to swap first index of from into first index of to.
+ * Use mirror = 1 to swap first index of from into last index of to.
+ */
+void ws2812b_StripSwapSegment(uint16_t indexFrom, uint16_t indexTo, uint16_t numToSwap, uint8_t mirror)
+{
+	if (mirror == 0)
+	{
+		for (uint16_t i = 0; i < numToSwap; i++)
+			ws2812b_LedSwap(indexFrom + i, indexTo + i);
+	}
+	else if (mirror == 1)
+	{
+		for (uint16_t i = 0; i < numToSwap; i++)
+			ws2812b_LedSwap(indexFrom + i, (indexTo + numToSwap - 1) - i);
+	}
+}
+
+/*
  * Swap the colors of LEDs at position1 and position2
  */
 void ws2812b_LedSwap(uint16_t position1, uint16_t position2)
@@ -231,82 +248,82 @@ void ws2812b_LedMove(uint16_t numLedsToCopy, uint16_t copyFrom, uint16_t copyTo)
 /*
  * Sets the LED at positionInStrip to newColor
  */
-void ws2812b_LedSet(const uint16_t *positionInStrip, const ledcolor_t *newColor)
+void ws2812b_LedSet(const uint16_t *positionInStrip, const uint8_t *newGreen, const uint8_t *newRed, const uint8_t *newBlue)
 {
-	ws2812b_ColorToBits(&(newColor->green), &stripData[*positionInStrip*LED_OFFSET]);
-	ws2812b_ColorToBits(&(newColor->red), &stripData[*positionInStrip*LED_OFFSET + RED_OFFSET]);
-	ws2812b_ColorToBits(&(newColor->blue), &stripData[*positionInStrip*LED_OFFSET + BLUE_OFFSET]);
+	ws2812b_ColorToBits(newGreen, &stripData[*positionInStrip*LED_OFFSET]);
+	ws2812b_ColorToBits(newRed, &stripData[*positionInStrip*LED_OFFSET + RED_OFFSET]);
+	ws2812b_ColorToBits(newBlue, &stripData[*positionInStrip*LED_OFFSET + BLUE_OFFSET]);
 }
 
 /*
  * Decreases the color of all LEDs on the strip by a value of newColor
  * If the existing value - new value < 0, it rolls over.
  */
-void ws2812b_StripDecrementColor(const ledcolor_t *newColor)
+void ws2812b_StripDecrementColor(const uint8_t *newGreen, const uint8_t *newRed, const uint8_t *newBlue)
 {
 	for(uint16_t i = 0; i < numberOfLeds; i++)
-		ws2812b_LedDecrementColor(&i, newColor);
+		ws2812b_LedDecrementColor(&i, newGreen, newRed, newBlue);
 }
 
 /*
  * Decreases the color of LED at positionInStrip by a value of newColor
  * If the existing value - new value < 0, it rolls over.
  */
-void ws2812b_LedDecrementColor(const uint16_t *positionInStrip, const ledcolor_t *newColor)
+void ws2812b_LedDecrementColor(const uint16_t *positionInStrip, const uint8_t *newGreen, const uint8_t *newRed, const uint8_t *newBlue)
 {
-	if (newColor->green > 0)
-		ws2812b_DecrementColorChannel(&(newColor->green), &stripData[*positionInStrip*LED_OFFSET]);
+	if (*newGreen > 0)
+		ws2812b_DecrementColorChannel(newGreen, &stripData[*positionInStrip*LED_OFFSET]);
 
-	if (newColor->red > 0)
-		ws2812b_DecrementColorChannel(&(newColor->red), &stripData[*positionInStrip*LED_OFFSET + RED_OFFSET]);
+	if (*newRed > 0)
+		ws2812b_DecrementColorChannel(newRed, &stripData[*positionInStrip*LED_OFFSET + RED_OFFSET]);
 
-	if (newColor->blue > 0)
-		ws2812b_DecrementColorChannel(&(newColor->blue), &stripData[*positionInStrip*LED_OFFSET + BLUE_OFFSET]);
+	if (*newBlue > 0)
+		ws2812b_DecrementColorChannel(newBlue, &stripData[*positionInStrip*LED_OFFSET + BLUE_OFFSET]);
 }
 
 /*
  * Increases the color of all LEDs on the strip by a value of newColor
  * If the existing value + new value > 255, it rolls over.
  */
-void ws2812b_StripIncrementColor(const ledcolor_t *newColor)
+void ws2812b_StripIncrementColor(const uint8_t *newGreen, const uint8_t *newRed, const uint8_t *newBlue)
 {
 	for(uint16_t i = 0; i < numberOfLeds; i++)
-		ws2812b_LedIncrementColor(&i, newColor);
+		ws2812b_LedIncrementColor(&i, newGreen, newRed, newBlue);
 }
 
 /*
  * Increases the color of LED at positionInStrip by a value of newColor
  * If the existing value + new value > 255, it rolls over.
  */
-void ws2812b_LedIncrementColor(const uint16_t *positionInStrip, const ledcolor_t *newColor)
+void ws2812b_LedIncrementColor(const uint16_t *positionInStrip, const uint8_t *newGreen, const uint8_t *newRed, const uint8_t *newBlue)
 {
-	if (newColor->green > 0)
-		ws2812b_IncrementColorChannel(&(newColor->green), &stripData[*positionInStrip*LED_OFFSET]);
+	if (*newGreen > 0)
+		ws2812b_IncrementColorChannel(newGreen, &stripData[*positionInStrip*LED_OFFSET]);
 
-	if (newColor->red > 0)
-		ws2812b_IncrementColorChannel(&(newColor->red), &stripData[*positionInStrip*LED_OFFSET + RED_OFFSET]);
+	if (*newRed > 0)
+		ws2812b_IncrementColorChannel(newRed, &stripData[*positionInStrip*LED_OFFSET + RED_OFFSET]);
 
-	if (newColor->blue > 0)
-		ws2812b_IncrementColorChannel(&(newColor->blue), &stripData[*positionInStrip*LED_OFFSET + BLUE_OFFSET]);
+	if (*newBlue > 0)
+		ws2812b_IncrementColorChannel(newBlue, &stripData[*positionInStrip*LED_OFFSET + BLUE_OFFSET]);
 }
 
 /*
  * Check if the current state of the led at positionInStrip matches with colorToCheck
  * Returns 1 if all 3 color channels match.
  */
-uint8_t ws2812b_LedCheck(const uint16_t *positionInStrip, const ledcolor_t *colorToCheck)
+uint8_t ws2812b_LedCheck(const uint16_t *positionInStrip, const uint8_t *newGreen, const uint8_t *newRed, const uint8_t *newBlue)
 {
 	uint8_t tempGreen = 0, tempRed = 0, tempBlue = 0;
 	ws2812b_BitsToColor(&tempGreen, &stripData[*positionInStrip*LED_OFFSET]);
 	ws2812b_BitsToColor(&tempRed, &stripData[*positionInStrip*LED_OFFSET + RED_OFFSET]);
 	ws2812b_BitsToColor(&tempBlue, &stripData[*positionInStrip*LED_OFFSET + BLUE_OFFSET]);
-	return ((colorToCheck->green == tempGreen) && (colorToCheck->red == tempRed) && (colorToCheck->blue == tempBlue));
+	return ((*newGreen == tempGreen) && (*newRed == tempRed) && (*newBlue == tempBlue));
 }
 
 /*
  * Decrement a single color channel (Red, Green or Blue)
  */
-static void ws2812b_DecrementColorChannel(const uint8_t *decrementBy, uint8_t *channelToDecrement)
+static __inline void ws2812b_DecrementColorChannel(const uint8_t *decrementBy, uint8_t *channelToDecrement)
 {
 	uint8_t temp = 0;
 	ws2812b_BitsToColor(&temp, channelToDecrement);
@@ -317,7 +334,7 @@ static void ws2812b_DecrementColorChannel(const uint8_t *decrementBy, uint8_t *c
 /*
  * Increment a single color channel (Red, Green or Blue)
  */
-static void ws2812b_IncrementColorChannel(const uint8_t *incrementBy, uint8_t *channelToIncrement)
+static __inline void ws2812b_IncrementColorChannel(const uint8_t *incrementBy, uint8_t *channelToIncrement)
 {
 	uint8_t temp = 0;
 	ws2812b_BitsToColor(&temp, channelToIncrement);
@@ -328,7 +345,7 @@ static void ws2812b_IncrementColorChannel(const uint8_t *incrementBy, uint8_t *c
 /*
  * Converts an array of 8 T_ONE or T_ZEROs back to a byte
  */
-static void ws2812b_BitsToColor(uint8_t *colorByte, const uint8_t *arrayOfBits)
+static __inline void ws2812b_BitsToColor(uint8_t *colorByte, const uint8_t *arrayOfBits)
 {
 	*colorByte = 0;
 	for(uint8_t i = 0; i < 8; i++)
@@ -343,7 +360,7 @@ static void ws2812b_BitsToColor(uint8_t *colorByte, const uint8_t *arrayOfBits)
  * G7 G6 G5 G4 G3 G2 G1 G0 R7 R6 R5 R4 R3 R2 R1 R0 B7 B6 B5 B4 B3 B2 B1 B0
  * Note: Follow the order of GRB to sent data MSB first.
  */
-static void ws2812b_ColorToBits(const uint8_t *colorByte, uint8_t *arrayOfBits)
+static __inline void ws2812b_ColorToBits(const uint8_t *colorByte, uint8_t *arrayOfBits)
 {
 	for(uint8_t bit = 0; bit < 8; bit++)
 	{

@@ -27,7 +27,8 @@ typedef enum
 	cmdLedCopy,			//copy one or more Leds to a new location - number of LEDs to copy, position of 1st LED to copy, position of 1st LED to paste
 	cmdLedMove,    //Similar to LedCopy, but after it copies to the new location, it frees (turns off) the Led at the old location.
 	cmdLedCheck,        //Check if the supplied parameters (color channel values) for a specific LED match.
-} commands_t;
+	cmdStripSwapSegment,
+} ws2812b_commands_t;
 
 typedef enum
 {
@@ -35,26 +36,20 @@ typedef enum
 	rotateCounterClockwise,
 } rotation_t;
 
-typedef struct
-{
-	uint8_t green;
-	uint8_t red;
-	uint8_t blue;
-} ledcolor_t;
-
 uint8_t ws2812b_Init(uint16_t ledCount);
 void ws2812b_SetStripOff();
-void ws2812b_SetStripColor(const ledcolor_t *newColor);
+void ws2812b_SetStripColor(const uint8_t *newGreen, const uint8_t *newRed, const uint8_t *newBlue);
 void ws2812b_RotateStrip(rotation_t direction, uint16_t rotateBy);
 void ws2812b_LedCopy(uint16_t numLedsToCopy, uint16_t copyFrom, uint16_t copyTo);
 void ws2812b_LedMove(uint16_t numLedsToCopy, uint16_t copyFrom, uint16_t copyTo);
-void ws2812b_LedSet(const uint16_t *positionInStrip, const ledcolor_t *newColor);
+void ws2812b_LedSet(const uint16_t *positionInStrip, const uint8_t *newGreen, const uint8_t *newRed, const uint8_t *newBlue);
 void ws2812b_LedSwap(uint16_t position1, uint16_t position2);
-void ws2812b_LedDecrementColor(const uint16_t *positionInStrip, const ledcolor_t *newColor);
-void ws2812b_LedIncrementColor(const uint16_t *positionInStrip, const ledcolor_t *newColor);
-void ws2812b_StripIncrementColor(const ledcolor_t *newColor);
-void ws2812b_StripDecrementColor(const ledcolor_t *newColor);
-uint8_t ws2812b_LedCheck(const uint16_t *positionInStrip, const ledcolor_t *colorToCheck);
+void ws2812b_LedDecrementColor(const uint16_t *positionInStrip, const uint8_t *newGreen, const uint8_t *newRed, const uint8_t *newBlue);
+void ws2812b_LedIncrementColor(const uint16_t *positionInStrip, const uint8_t *newGreen, const uint8_t *newRed, const uint8_t *newBlue);
+void ws2812b_StripIncrementColor(const uint8_t *newGreen, const uint8_t *newRed, const uint8_t *newBlue);
+void ws2812b_StripDecrementColor(const uint8_t *newGreen, const uint8_t *newRed, const uint8_t *newBlue);
+uint8_t ws2812b_LedCheck(const uint16_t *positionInStrip, const uint8_t *newGreen, const uint8_t *newRed, const uint8_t *newBlue);
 void ws2812b_RotateStripSegment(rotation_t direction, uint16_t startIndex, uint16_t endIndex, uint16_t rotateBy);
+void ws2812b_StripSwapSegment(uint16_t indexFrom, uint16_t indexTo, uint16_t numToSwap, uint8_t mirror);
 
 #endif /* APPLICATION_USER_WS2812B_H_ */

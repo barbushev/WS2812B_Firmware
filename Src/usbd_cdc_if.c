@@ -32,9 +32,12 @@
 
 /* Includes ------------------------------------------------------------------*/
 #include "usbd_cdc_if.h"
-/* USER CODE BEGIN INCLUDE */
 #include "stdarg.h"
-/* USER CODE END INCLUDE */
+#include "WS2812B.h"
+
+
+
+static void processIncomingData(uint8_t* Buf, uint32_t *Len);
 
 /** @addtogroup STM32_USB_OTG_DEVICE_LIBRARY
   * @{
@@ -49,12 +52,9 @@
   * @{
   */ 
 /* USER CODE BEGIN PRIVATE_TYPES */
-#define APP_RX_DATA_SIZE  512 // This doesn't need to be all that big - not going to send much data to the camera
-#define APP_TX_DATA_SIZE  512 // This is the largest size allowed for USB 2.0 Full Speed Bulk mode
+#define APP_RX_DATA_SIZE  64
+#define APP_TX_DATA_SIZE  64 // This is the largest size allowed for USB 2.0 Full Speed Bulk mode
 
-uint8_t received_data[APP_RX_DATA_SIZE];
-uint32_t received_data_size;
-uint32_t receive_total = 0;
 
 /* Create buffer for reception and transmission           */
 /* It's up to user to redefine and/or remove those define */
@@ -238,11 +238,16 @@ static int8_t CDC_Control_FS  (uint8_t cmd, uint8_t* pbuf, uint16_t length)
   */
 static int8_t CDC_Receive_FS (uint8_t* Buf, uint32_t *Len)
 {
-  // CDC_Receive_FS  is a callback function. When data were received, the system calls this function. The received data can be accessed via Buf,and *Len
-  received_data_size = *Len;
-  //memcpy(received_data, Buf, received_data_size);
-  memcpy(&received_data[receive_total], Buf, received_data_size);
-  receive_total += received_data_size;
+	/* Data OUT transfer management (from host to device)
+	In general, the USB is much faster than the output terminal (i.e. the USART maximum
+	bitrate is 115.2 Kbps while USB bitrate is 12 Mbps for Full speed mode and 480 Mbps in
+	High speed mode). Consequently, before sending new packets, the host has to wait until the
+	device has finished to process the data sent by host. Thus, there is no need for circular data
+	buffer when a packet is received from host: the driver calls the lower layer OUT transfer
+	function and waits until this function is completed before allowing new transfers on the OUT
+	endpoint (meanwhile, OUT packets will be NACKed) */
+
+  processIncomingData(Buf, Len);
 
   USBD_CDC_SetRxBuffer(hUsbDevice_0, &Buf[0]);
   //prepare to receive the next data
@@ -263,24 +268,18 @@ static int8_t CDC_Receive_FS (uint8_t* Buf, uint32_t *Len)
   */
 uint8_t CDC_Transmit_FS(uint8_t* Buf, uint16_t Len)
 {
-  uint8_t result = USBD_OK;
-  /* USER CODE BEGIN 7 */ 
-  if (hUsbDevice_0 == NULL) return -1;
+	/*
+	Data IN transfer management (from device to host)
+	The data transfer is managed periodically depending on host request (the device specifies
+	the interval between packet requests). For this reason, a circular static buffer is used for
+	storing data sent by the device terminal (i.e. USART in the case of Virtual COM Port
+	terminal).
+	 */
 
-  do {
-  result = USBD_CDC_SetTxBuffer(hUsbDevice_0, Buf, Len);
-  }
-  while(result != USBD_OK);
+  memcpy(UserTxBufferFS, Buf, sizeof(char) * Len);
+  USBD_CDC_SetTxBuffer(hUsbDevice_0, UserTxBufferFS, Len);
 
-  do {
-  result = USBD_CDC_TransmitPacket(hUsbDevice_0);
-  } while(result != USBD_OK);
-
-  //have to make sure to not let it get out of the function until it is ready.
-  //could also implement a buffer like the receive part
-
-  /* USER CODE END 7 */ 
-  return result;
+  return USBD_CDC_TransmitPacket(hUsbDevice_0);
 }
 
 
@@ -297,8 +296,115 @@ uint8_t usbIsConnected(void)
     return (hUsbDeviceFS.dev_state != USBD_STATE_DEFAULT);
 }
 
+static void processIncomingData(uint8_t* Buf, uint32_t *Len)
+{
+	uint16_t data[5]; //1 command + up to 4 parameters
+	uint8_t error = 0;
 
+	char *token;
+	token = strtok ((char *)Buf, " ");
+	for (uint8_t i = 0; i < 5; i++)
+	{
+		if (token == NULL) break;
+		data[i] = atoi(token);
+		token = strtok (NULL, " ");
+	}
 
+	switch (data[0])
+	{
+		case cmdStripInit:
+		{
+			ws2812b_Init(data[1]);
+			break;
+		}
 
+		case cmdStripOff:
+		{
+			ws2812b_SetStripOff();
+			break;
+		}
 
+		case cmdStripSetColor:
+		{
+			ws2812b_SetStripColor((uint8_t *)&data[1], (uint8_t *)&data[2], (uint8_t *)&data[3]);
+			break;
+		}
 
+		case cmdStripRotate:
+		{
+		    ws2812b_RotateStrip(data[1], data[2]);
+		    break;
+		}
+
+     	case cmdLedSwap:
+		{
+			ws2812b_LedSwap(data[1], data[2]);
+			break;
+		}
+
+		case cmdLedSetColor:
+		{
+		    ws2812b_LedSet(&data[1], (uint8_t *)&data[2], (uint8_t *)&data[3], (uint8_t *)&data[4]);
+		    break;
+		}
+
+		case cmdLedCopy:
+		{
+			ws2812b_LedCopy(data[1], data[2], data[3]);
+			break;
+		}
+
+		case cmdLedMove:
+		{
+			ws2812b_LedMove(data[1], data[2], data[3]);
+			break;
+		}
+
+		case cmdLedIncColor:
+		{
+			ws2812b_LedIncrementColor(&data[1] , (uint8_t *)&data[2], (uint8_t *)&data[3], (uint8_t *)&data[4]);
+			break;
+		}
+
+		case cmdLedDecColor:
+		{
+			ws2812b_LedDecrementColor(&data[1], (uint8_t *)&data[2], (uint8_t *)&data[3], (uint8_t *)&data[4]);
+			break;
+		}
+
+		case cmdStripIncColor:
+		{
+			ws2812b_StripIncrementColor((uint8_t *)&data[1], (uint8_t *)&data[2], (uint8_t *)&data[3]);
+			break;
+		}
+
+		case cmdStripDecColor:
+		{
+			ws2812b_StripDecrementColor((uint8_t *)&data[1], (uint8_t *)&data[2], (uint8_t *)&data[3]);
+			break;
+		}
+
+		case cmdLedCheck:
+		{
+			error = (ws2812b_LedCheck(&data[1], (uint8_t *)&data[2], (uint8_t *)&data[3], (uint8_t *)&data[4]) != 1);
+			break;
+		}
+
+		case cmdStripRotateSegment:
+		{
+			ws2812b_RotateStripSegment(data[1], data[2], data[3], data[4]);
+			break;
+		}
+
+		case cmdStripSwapSegment:
+		{
+			ws2812b_StripSwapSegment(data[1], data[2], data[3], data[4]);
+			break;
+		}
+
+		default: error = 1;
+		}
+
+		if (error == 0)
+			CDC_Transmit_FS((uint8_t *)"OK", 3);
+}

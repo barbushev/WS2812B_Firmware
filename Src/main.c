@@ -36,15 +36,11 @@
 #include "usbd_cdc_if.h"
 #include "ctype.h"
 #include "stdarg.h"
-
 #include "WS2812B.h"
-
-void USB_SEND(const char *string, ...);
-void USB_sendOK();
-void clear_rcv_data();
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
+void USB_SEND(const char *string, ...);
 
 int main(void)
 {
@@ -58,155 +54,11 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_USB_DEVICE_Init();
 
-while (!usbIsConnected())
-	HAL_Delay(1000);
-
-	while (1)
-	{
-	if ((hUsbDevice_0 != NULL) && (hUsbDevice_0->dev_state) && receive_total)		//if usb is not null, is connected and something was received
-		{
-		ledcolor_t newColor;
-		uint16_t data[5]; //1 command + up to 4 parameters
-		uint8_t error = 0;
-
-		char *token;
-		token = strtok ((char *)received_data, " ");
-		for (uint8_t i = 0; i < 5; i++)
-		{
-			if (token == NULL) break;
-			data[i] = atoi(token);
-			token = strtok (NULL, " ");
-		}
-
-		switch (data[0])
-		{
-			case cmdStripInit:
-			{
-				ws2812b_Init(data[1]);
-				break;
-			}
-
-			case cmdStripOff:
-			{
-				ws2812b_SetStripOff();
-				break;
-			}
-
-			case cmdStripSetColor:
-			{
-				newColor.green = data[1];
-				newColor.red = data[2];
-				newColor.blue = data[3];
-				ws2812b_SetStripColor(&newColor);
-				break;
-			}
-
-			case cmdStripRotate:
-			{
-			    ws2812b_RotateStrip(data[1], data[2]);
-			    break;
-			}
-
-	     	case cmdLedSwap:
-			{
-				ws2812b_LedSwap(data[1], data[2]);
-				break;
-			}
-
-			case cmdLedSetColor:
-			{
-			    newColor.green = data[2];
-			    newColor.red = data[3];
-		        newColor.blue = data[4];
-			    ws2812b_LedSet(&data[1], &newColor);
-			    break;
-			}
-
-			case cmdLedCopy:
-			{
-				ws2812b_LedCopy(data[1], data[2], data[3]);
-				break;
-			}
-
-			case cmdLedMove:
-			{
-				ws2812b_LedMove(data[1], data[2], data[3]);
-				break;
-			}
-
-			case cmdLedIncColor:
-			{
-				newColor.green = data[2];
-				newColor.red = data[3];
-				newColor.blue = data[4];
-				ws2812b_LedIncrementColor(&data[1], &newColor);
-				break;
-			}
-
-			case cmdLedDecColor:
-			{
-				newColor.green = data[2];
-				newColor.red = data[3];
-				newColor.blue = data[4];
-				ws2812b_LedDecrementColor(&data[1], &newColor);
-				break;
-			}
-
-			case cmdStripIncColor:
-			{
-				newColor.green = data[1];
-				newColor.red = data[2];
-				newColor.blue = data[3];
-				ws2812b_StripIncrementColor(&newColor);
-				break;
-			}
-
-			case cmdStripDecColor:
-			{
-				newColor.green = data[1];
-				newColor.red = data[2];
-				newColor.blue = data[3];
-				ws2812b_StripDecrementColor(&newColor);
-				break;
-			}
-
-			case cmdLedCheck:
-			{
-				newColor.green = data[2];
-				newColor.red = data[3];
-				newColor.blue = data[4];
-				error = (ws2812b_LedCheck(&data[1], &newColor) != 1);
-				break;
-			}
-
-			case cmdStripRotateSegment:
-			{
-				ws2812b_RotateStripSegment(data[1], data[2], data[3], data[4]);
-				break;
-			}
-
-			default: error = 1;
-		}
-
-		 if (error == 0) USB_sendOK();
-		 clear_rcv_data();
-		}
-	}
+  while (1)
+  {
+	  HAL_Delay(100);
+  }
 }
-
-void USB_sendOK()
-{
-	while (CDC_Transmit_FS((uint8_t *)"OK", 3));
-}
-
-//clear the received_data
-void clear_rcv_data()
-{
-	received_data_size = 0;
-	memset(received_data, 0, receive_total);
-	receive_total = 0;
-}
-
 
 /*
  * Helper function to send a bunch of data over
@@ -219,7 +71,7 @@ va_start(arglist,string);
 uint8_t length = vsprintf(buf,string,arglist);
 va_end(arglist);
 
-while (CDC_Transmit_FS((uint8_t *)buf, length));
+CDC_Transmit_FS((uint8_t *)buf, length);
 }
 
 /** System Clock Configuration
